@@ -1,0 +1,21 @@
+[Unit]
+Description=90 Days 10 Goals Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/90days_bot
+Environment="PATH=/opt/90days_bot/venv/bin"
+ExecStart=/opt/90days_bot/venv/bin/python bot.py
+Restart=always
+RestartSec=10
+
+# Логирование
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=90days_bot
+
+[Install]
+WantedBy=multi-user.target
+
