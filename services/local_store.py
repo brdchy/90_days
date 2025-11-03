@@ -63,3 +63,10 @@ async def set_json(key: str, value: Dict[str, Any]) -> None:
     await set_value(key, json.dumps(value, ensure_ascii=False))
 
 
+async def get_updated_at(key: str) -> Optional[int]:
+    await init_db()
+    async with aiosqlite.connect(DB_FILE) as db:
+        async with db.execute("SELECT updated_at FROM kv WHERE key = ?", (key,)) as cur:
+            row = await cur.fetchone()
+            return int(row[0]) if row and row[0] is not None else None
+

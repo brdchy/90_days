@@ -506,9 +506,17 @@ async def test_chat(admin: str = Depends(verify_admin)):
                 status_code=400,
                 detail="Чат не настроен. Добавьте бота в чат для проверки."
             )
-        
+        # Пытаемся отправить тестовое сообщение в чат
+        try:
+            from aiogram import Bot
+            bot = Bot(token=config.bot_token.get_secret_value())
+            await bot.send_message(chat_id=chat_id, text="✅ Тест: бот подключен и может писать в чат", message_thread_id=thread_id)
+        except Exception as send_err:
+            logger.error(f"Ошибка отправки тестового сообщения: {send_err}")
+            raise HTTPException(status_code=500, detail="Не удалось отправить сообщение в чат. Проверьте права бота и корректность chat_id/thread_id.")
+
         return {
-            "message": "Чат настроен корректно",
+            "message": "Чат настроен корректно. Тестовое сообщение отправлено.",
             "chat_id": chat_id,
             "thread_id": thread_id
         }

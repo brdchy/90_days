@@ -379,6 +379,35 @@ class GameDataManager:
     async def refresh_local_cache_from_remote(self) -> Dict[str, Any]:
         """Принудительно перечитывает данные из удаленного файла и обновляет локальный кеш."""
         try:
+            # Если локальные данные свежее минуты — не перезатираем
+            try:
+                local_updated_at = await local_store.get_updated_at("all_data")
+            except Exception:
+                local_updated_at = None
+            from time import time
+            now_epoch = int(time())
+            if local_updated_at and (now_epoch - local_updated_at) < 60:
+                current = await local_store.get_json("all_data")
+                return current or self._create_empty_data_structure()
+
+            # Смотрим, новее ли удаленный файл локальных данных
+            remote_mtime = None
+            try:
+                info = await self.yandex.get_file_info(self._copy_file_path)
+                mtime_str = info.get("modified", "")
+                if mtime_str.endswith('Z'):
+                    mtime_str = mtime_str[:-1] + '+00:00'
+                from datetime import datetime
+                remote_dt = datetime.fromisoformat(mtime_str) if mtime_str else None
+                if remote_dt:
+                    remote_mtime = int(remote_dt.timestamp())
+            except Exception:
+                remote_mtime = None
+
+            if local_updated_at and remote_mtime and remote_mtime <= local_updated_at:
+                current = await local_store.get_json("all_data")
+                return current or self._create_empty_data_structure()
+
             file_data = await self._get_file_data(force_refresh=True)
             wb = load_workbook(io.BytesIO(file_data))
 
