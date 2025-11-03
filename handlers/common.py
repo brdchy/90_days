@@ -14,8 +14,12 @@ game_data = GameDataManager()
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     
-    # Проверяем, зарегистрирован ли пользователь
-    data = await game_data.get_all_data()
+    # Перед проверкой обновляем локальные данные из удаленного файла,
+    # чтобы бот видел изменения (например, удаление участника через админку)
+    try:
+        data = await game_data.refresh_local_cache_from_remote()
+    except Exception:
+        data = await game_data.get_all_data()
     user_id = message.from_user.id
     
     # Создаем кнопку для входа на сайт, если пользователь зарегистрирован

@@ -375,6 +375,83 @@ class GameDataManager:
             empty = self._create_empty_data_structure()
             await local_store.set_json("all_data", empty)
             return empty
+
+    async def refresh_local_cache_from_remote(self) -> Dict[str, Any]:
+        """Принудительно перечитывает данные из удаленного файла и обновляет локальный кеш."""
+        try:
+            file_data = await self._get_file_data(force_refresh=True)
+            wb = load_workbook(io.BytesIO(file_data))
+
+            # Если нет листа участников — сохранить пустую структуру
+            if "Участники" not in wb.sheetnames:
+                data = self._create_empty_data_structure()
+                await local_store.set_json("all_data", data)
+                return data
+
+            # Участники
+            ws = wb["Участники"]
+            participants = []
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if row and row[0] is not None:
+                    goals = []
+                    if len(row) > 6:
+                        goals = [row[5+i] or "" if 5+i < len(row) else "" for i in range(1, 11)]
+                    else:
+                        goals = [""] * 10
+                    participants.append({
+                        "user_id": row[0],
+                        "username": row[1] if len(row) > 1 else "",
+                        "full_name": row[2] if len(row) > 2 else "",
+                        "game_name": row[3] if len(row) > 3 else "",
+                        "registered_date": row[4] if len(row) > 4 else "",
+                        "status": row[5] if len(row) > 5 else "active",
+                        "goals": goals
+                    })
+
+            # Отчеты
+            reports = []
+            if "Отчеты" in wb.sheetnames:
+                ws_reports = wb["Отчеты"]
+                for row in ws_reports.iter_rows(min_row=2, values_only=True):
+                    if row and row[0] is not None:
+                        progress = []
+                        if len(row) > 3:
+                            progress = [row[2+i] or "" if 2+i < len(row) else "" for i in range(1, 11)]
+                        else:
+                            progress = [""] * 10
+                        reports.append({
+                            "user_id": row[0],
+                            "day": row[1] if len(row) > 1 else 1,
+                            "date": row[2] if len(row) > 2 else "",
+                            "progress": progress,
+                            "rest_day": row[13] == "Да" if len(row) > 13 and row[13] else False
+                        })
+
+            # Настройки
+            settings = {}
+            if "Настройки" in wb.sheetnames:
+                ws_settings = wb["Настройки"]
+                for row in ws_settings.iter_rows(min_row=2, values_only=True):
+                    if row and row[0]:
+                        key = str(row[0])
+                        value = row[1] if len(row) > 1 else None
+                        settings[key] = value
+
+            data_dict = {
+                "participants": participants,
+                "reports": reports,
+                "settings": settings
+            }
+            await local_store.set_json("all_data", data_dict)
+            # Инвалидируем in-memory кеш
+            self._cache = None
+            self._cache_time = None
+            return data_dict
+        except Exception as e:
+            logging.error(f"Ошибка принудительного обновления данных: {e}")
+            # В случае ошибки не ломаемся: возвращаем локальные данные
+            current = await local_store.get_json("all_data")
+            return current or self._create_empty_data_structure()
     
     async def save_data(self, data: Dict[str, Any], sync_to_main: bool = False) -> None:
         """Сохраняет данные локально и планирует синхронизацию на Я.Диск."""
