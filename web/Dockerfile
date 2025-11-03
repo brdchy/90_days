@@ -1,11 +1,24 @@
 FROM node:18-alpine AS build
 WORKDIR /app
+ENV NODE_ENV=production
+
+# Устанавливаем зависимости с кэшем npm
 COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
-COPY . .
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+
+# Копируем только необходимые файлы для билда, чтобы не инвалидировать кэш лишний раз
+COPY vite.config.js ./vite.config.js
+COPY tailwind.config.js ./tailwind.config.js
+COPY postcss.config.js ./postcss.config.js
+COPY index.html ./index.html
+COPY public ./public
+COPY src ./src
+
 ARG VITE_API_URL
 ENV VITE_API_URL=$VITE_API_URL
-RUN npm run build
+
+# Кэш для Vite/Esbuild
+RUN --mount=type=cache,target=/root/.cache --mount=type=cache,target=/app/node_modules/.vite npm run build
 
 FROM nginx:alpine
 WORKDIR /usr/share/nginx/html

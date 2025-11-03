@@ -13,6 +13,12 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    sourcemap: false,
+    target: 'es2018',
+    minify: 'esbuild',
+    chunkSizeWarningLimit: 2000,
+  },
   server: {
     port: 3000,
     proxy: {
