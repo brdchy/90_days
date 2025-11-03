@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from services.yandex_sheets import YandexDiskAPI
+from services import local_store
 from config_reader import config
 
 
@@ -19,6 +20,9 @@ class GameDataManager:
         self._cache_time: Optional[datetime] = None
         self._cache_ttl = timedelta(minutes=5)  # Кэш на 5 минут
         self._main_file_mtime: Optional[datetime] = None  # Время последнего изменения основного файла
+        # Локальная БД + отложенная синхронизация
+        self._sync_task = None
+        self._sync_delay_seconds = 60
     
     async def _get_working_file_path(self) -> str:
         """Определяет, с каким файлом работать: основным или копией"""
@@ -204,9 +208,99 @@ class GameDataManager:
         
         return data
     
-    async def get_all_data(self) -> Dict[str, Any]:
-        """Получает все данные из файла"""
+    async def _build_excel_bytes(self, data: Dict[str, Any]) -> bytes:
+        """Строит Excel байты из словаря данных."""
+        wb = Workbook()
+        if wb.sheetnames:
+            wb.remove(wb.active)
+        # Участники
+        ws = wb.create_sheet("Участники")
+        headers = ["User ID", "Username", "Full Name", "Game Name", "Registered Date", "Status"] + \
+                  [f"Goal {i}" for i in range(1, 11)]
+        ws.append(headers)
+        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+        for participant in data["participants"]:
+            row = [
+                participant["user_id"],
+                participant["username"],
+                participant["full_name"],
+                participant["game_name"],
+                participant["registered_date"],
+                participant["status"],
+            ] + participant["goals"]
+            ws.append(row)
+        # Отчеты
+        ws_reports = wb.create_sheet("Отчеты")
+        report_headers = ["User ID", "Day", "Date", "Goal 1", "Goal 2", "Goal 3", "Goal 4", "Goal 5",
+                          "Goal 6", "Goal 7", "Goal 8", "Goal 9", "Goal 10", "Rest Day"]
+        ws_reports.append(report_headers)
+        for cell in ws_reports[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+        for report in data["reports"]:
+            row = [report["user_id"], report["day"], report["date"]] + report["progress"] + ["Да" if report.get("rest_day") else "Нет"]
+            ws_reports.append(row)
+        # Настройки
+        ws_settings = wb.create_sheet("Настройки")
+        settings_headers = ["Key", "Value"]
+        ws_settings.append(settings_headers)
+        for cell in ws_settings[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+        for key, value in (data.get("settings", {}) or {}).items():
+            if value is not None:
+                ws_settings.append([key, value])
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        out = buffer.read()
+        buffer.close()
+        return out
+
+    async def _schedule_sync(self) -> None:
+        """Планирует отложенную синхронизацию на Я.Диск."""
+        async def _job():
+            try:
+                await asyncio.sleep(self._sync_delay_seconds)
+                data = await local_store.get_json("all_data")
+                if not data:
+                    return
+                file_data = await self._build_excel_bytes(data)
+                try:
+                    await self.yandex.upload_file(file_data, self._copy_file_path, overwrite=True)
+                except Exception as e:
+                    logging.error(f"Ошибка сохранения копии на Я.Диске: {e}")
+                    return
+                try:
+                    await self.yandex.copy_file(self._copy_file_path, self.file_path)
+                except Exception as e:
+                    logging.warning(f"Не удалось синхронизировать в основной файл: {e}")
+            except Exception as e:
+                logging.error(f"Ошибка фоновой синхронизации: {e}")
+
+        # Отменяем предыдущую задачу, если еще не стартовала
         try:
+            if self._sync_task and not self._sync_task.done():
+                self._sync_task.cancel()
+        except Exception:
+            pass
+        loop = asyncio.get_running_loop()
+        self._sync_task = loop.create_task(_job())
+
+    async def get_all_data(self) -> Dict[str, Any]:
+        """Получает все данные из локальной БД (или инициализирует из Я.Диска один раз)."""
+        try:
+            data = await local_store.get_json("all_data")
+            if data is not None:
+                return data
+            # Инициализация из Я.Диска, если локально пусто
             file_data = await self._get_file_data()
             wb = load_workbook(io.BytesIO(file_data))
             
@@ -267,133 +361,34 @@ class GameDataManager:
                         value = row[1] if len(row) > 1 else None
                         settings[key] = value
             
-            return {
+            data_dict = {
                 "participants": participants,
                 "reports": reports,
                 "settings": settings
             }
+            await local_store.set_json("all_data", data_dict)
+            return data_dict
         except Exception as e:
             logging.error(f"Ошибка при чтении данных из файла: {e}")
             # Возвращаем пустую структуру при ошибке
-            return self._create_empty_data_structure()
+            empty = self._create_empty_data_structure()
+            await local_store.set_json("all_data", empty)
+            return empty
     
     async def save_data(self, data: Dict[str, Any], sync_to_main: bool = False) -> None:
-        """
-        Сохраняет данные в файл
-        
-        Args:
-            data: Данные для сохранения
-            sync_to_main: Если True, синхронизирует с основным файлом (используется при сохранении отчетов)
-        """
-        # Обновляем кэш в памяти
+        """Сохраняет данные локально и планирует синхронизацию на Я.Диск."""
+        await local_store.set_json("all_data", data)
+        # инвалидация in-memory
         self._cache = None
         self._cache_time = None
-        
-        # Всегда создаем новый файл с правильной структурой
-        wb = Workbook()
-        # Удаляем дефолтный лист
-        if wb.sheetnames:
-            wb.remove(wb.active)
-        
-        # Участники
-        ws = wb.create_sheet("Участники")
-        
-        headers = ["User ID", "Username", "Full Name", "Game Name", "Registered Date", "Status"] + \
-                  [f"Goal {i}" for i in range(1, 11)]
-        ws.append(headers)
-        
-        # Стили для заголовков
-        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-        header_font = Font(bold=True, color="FFFFFF")
-        for cell in ws[1]:
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-        
-        # Добавляем участников
-        for participant in data["participants"]:
-            row = [
-                participant["user_id"],
-                participant["username"],
-                participant["full_name"],
-                participant["game_name"],
-                participant["registered_date"],
-                participant["status"]
-            ] + participant["goals"]
-            ws.append(row)
-        
-        # Отчеты
-        ws_reports = wb.create_sheet("Отчеты")
-        report_headers = ["User ID", "Day", "Date", "Goal 1", "Goal 2", "Goal 3", "Goal 4", "Goal 5",
-                         "Goal 6", "Goal 7", "Goal 8", "Goal 9", "Goal 10", "Rest Day"]
-        ws_reports.append(report_headers)
-        
-        # Стили для заголовков отчетов
-        for cell in ws_reports[1]:
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-        
-        # Добавляем отчеты
-        for report in data["reports"]:
-            row = [
-                report["user_id"],
-                report["day"],
-                report["date"],
-            ] + report["progress"] + ["Да" if report.get("rest_day") else "Нет"]
-            ws_reports.append(row)
-        
-        # Настройки
-        ws_settings = wb.create_sheet("Настройки")
-        settings_headers = ["Key", "Value"]
-        ws_settings.append(settings_headers)
-        
-        # Стили для заголовков настроек
-        for cell in ws_settings[1]:
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-        
-        # Добавляем настройки
-        settings = data.get("settings", {})
-        for key, value in settings.items():
-            if value is not None:
-                ws_settings.append([key, value])
-        
-        # Сохраняем в байты
-        buffer = io.BytesIO()
-        wb.save(buffer)
-        buffer.seek(0)
-        file_data = buffer.read()
-        buffer.close()
-        
-        # Сохраняем в копию (которая не блокируется)
-        try:
-            await self.yandex.upload_file(file_data, self._copy_file_path, overwrite=True)
-            logging.info("Данные сохранены в копию файла")
-        except Exception as e:
-            logging.error(f"Ошибка при сохранении в копию: {e}")
-            # Пробуем сохранить в основной файл
-            await self.yandex.upload_file(file_data, self.file_path, overwrite=True)
-            return
-        
-        # Синхронизируем с основным файлом только если явно указано (при сохранении отчетов)
+        # Планируем фоновой синк; если sync_to_main=True — синкнем раньше (через малую задержку)
         if sync_to_main:
-            try:
-                await self.yandex.copy_file(self._copy_file_path, self.file_path)
-                logging.info("Данные синхронизированы в основной файл")
-            except Exception as e:
-                error_str = str(e).lower()
-                if any(keyword in error_str for keyword in ["locked", "blocked", "busy", "conflict", "409", "423"]):
-                    logging.warning(
-                        "⚠️ Основной файл заблокирован (возможно, открыт в браузере). "
-                        "Данные сохранены в копию. Основной файл будет обновлен автоматически, когда будет доступен."
-                    )
-                else:
-                    logging.error(f"Ошибка при синхронизации с основным файлом: {e}")
-        
-        self._cache = file_data
-        self._cache_time = datetime.now()
+            prev = self._sync_delay_seconds
+            self._sync_delay_seconds = 2
+            await self._schedule_sync()
+            self._sync_delay_seconds = prev
+        else:
+            await self._schedule_sync()
     
     async def get_settings(self) -> Dict[str, Any]:
         """Получает настройки из файла"""
