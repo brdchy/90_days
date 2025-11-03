@@ -285,11 +285,15 @@ export default function AdminSettings() {
             <p className="text-gray-500">Нажмите «Обновить статус», чтобы получить информацию.</p>
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Текущее время бота</p>
                   <p className="font-medium text-gray-900 font-mono">{botStatus.bot_time}</p>
                   <p className="text-xs text-gray-500">Смещение: {botStatus.time_offset_hours || 0} ч</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Системное время</p>
+                  <p className="font-medium text-gray-900 font-mono">{botStatus.system_time}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Время напоминаний</p>
@@ -306,10 +310,12 @@ export default function AdminSettings() {
                 {botStatus.users_without_report?.length > 0 && (
                   <ul className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-700">
                     {botStatus.users_without_report.slice(0, 10).map((u) => (
-                      <li key={u.user_id} className="flex items-center gap-2">
+                      <li key={u.user_id} className="flex items-center gap-2 overflow-hidden">
                         <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                        <span className="font-medium">{u.game_name}</span>
-                        <span className="text-gray-500">@{u.username}</span>
+                        <span className="font-medium truncate max-w-[10rem]">{u.game_name}</span>
+                        {u.username && (
+                          <span className="text-gray-500 truncate">@{u.username}</span>
+                        )}
                       </li>
                     ))}
                   </ul>

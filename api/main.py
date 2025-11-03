@@ -428,6 +428,7 @@ async def get_bot_status(admin: str = Depends(verify_admin)):
 
         return {
             "bot_time": bot_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "system_time": now.strftime("%Y-%m-%d %H:%M:%S"),
             "time_offset_hours": settings.get("time_offset_hours", 0),
             "reminder_time": reminder_time,
             "removal_time": removal_time,
@@ -514,7 +515,7 @@ async def test_chat(admin: str = Depends(verify_admin)):
         except Exception as send_err:
             logger.error(f"Ошибка отправки тестового сообщения: {send_err}")
             raise HTTPException(status_code=500, detail="Не удалось отправить сообщение в чат. Проверьте права бота и корректность chat_id/thread_id.")
-
+        
         return {
             "message": "Чат настроен корректно. Тестовое сообщение отправлено.",
             "chat_id": chat_id,

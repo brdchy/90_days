@@ -19,7 +19,7 @@ async def cmd_start(message: Message, state: FSMContext):
     try:
         data = await game_data.refresh_local_cache_from_remote()
     except Exception:
-        data = await game_data.get_all_data()
+    data = await game_data.get_all_data()
     user_id = message.from_user.id
     
     # Создаем кнопку для входа на сайт, если пользователь зарегистрирован
