@@ -4,6 +4,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 from keyboards.common import get_main_menu
 from services.game_data import GameDataManager
+import logging
 
 router = Router()
 game_data = GameDataManager()
@@ -12,16 +13,111 @@ game_data = GameDataManager()
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer(
-        "👋 Привет! Я бот для игры '90 дней - 10 целей'.\n\n"
-        "Я помогу тебе:\n"
-        "• Зарегистрироваться в игре\n"
-        "• Установить 10 целей\n"
-        "• Вести ежедневные отчеты\n"
-        "• Отслеживать прогресс\n\n"
-        "Используй меню ниже или команды для навигации.",
-        reply_markup=get_main_menu()
-    )
+    
+    # Проверяем, зарегистрирован ли пользователь
+    data = await game_data.get_all_data()
+    user_id = message.from_user.id
+    
+    # Создаем кнопку для входа на сайт, если пользователь зарегистрирован
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from keyboards.common import get_main_menu
+    
+    if game_data.is_user_registered(user_id, data):
+        # Генерируем токен через API
+        import httpx
+        import os
+        
+        web_url = os.getenv("WEB_URL", "http://localhost:3000")
+        api_url = os.getenv("API_URL", "http://localhost:8000")
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{api_url}/api/auth/generate-token",
+                    json={"user_id": user_id},
+                    timeout=5.0
+                )
+                if response.status_code == 200:
+                    token_data = response.json()
+                    web_link = InlineKeyboardMarkup(inline_keyboard=[[
+                        InlineKeyboardButton(
+                            text="🌐 Перейти на сайт",
+                            url=token_data.get("url", f"{web_url}/auth?token={token_data.get('token')}")
+                        )
+                    ]])
+                    
+                    await message.answer(
+                        "👋 Привет! Я бот для игры '90 дней - 10 целей'.\n\n"
+                        "Я помогу тебе:\n"
+                        "• Зарегистрироваться в игре\n"
+                        "• Установить 10 целей\n"
+                        "• Вести ежедневные отчеты\n"
+                        "• Отслеживать прогресс\n\n"
+                        "Используй меню ниже или команды для навигации.\n\n"
+                        "💡 <b>Нажми кнопку ниже, чтобы перейти на сайт и посмотреть свою статистику!</b>",
+                        reply_markup=web_link,
+                        parse_mode="HTML"
+                    )
+                else:
+                    await message.answer(
+                        "👋 Привет! Я бот для игры '90 дней - 10 целей'.\n\n"
+                        "Я помогу тебе:\n"
+                        "• Зарегистрироваться в игре\n"
+                        "• Установить 10 целей\n"
+                        "• Вести ежедневные отчеты\n"
+                        "• Отслеживать прогресс\n\n"
+                        "Используй меню ниже или команды для навигации.",
+                        reply_markup=get_main_menu()
+                    )
+        except Exception as e:
+            logging.warning(f"Не удалось сгенерировать ссылку на сайт: {e}")
+            await message.answer(
+                "👋 Привет! Я бот для игры '90 дней - 10 целей'.\n\n"
+                "Я помогу тебе:\n"
+                "• Зарегистрироваться в игре\n"
+                "• Установить 10 целей\n"
+                "• Вести ежедневные отчеты\n"
+                "• Отслеживать прогресс\n\n"
+                "Используй меню ниже или команды для навигации.",
+                reply_markup=get_main_menu()
+            )
+    else:
+        await message.answer(
+            "👋 Привет! Я бот для игры '90 дней - 10 целей'.\n\n"
+            "Я помогу тебе:\n"
+            "• Зарегистрироваться в игре\n"
+            "• Установить 10 целей\n"
+            "• Вести ежедневные отчеты\n"
+            "• Отслеживать прогресс\n\n"
+            "Используй меню ниже или команды для навигации.",
+            reply_markup=get_main_menu()
+        )
+
+
+@router.message(Command("time"))
+async def cmd_time_user(message: Message):
+    """Показывает текущее время бота для обычных пользователей"""
+    from services.game_data import GameDataManager
+    from services.reminders import _get_bot_time
+    from datetime import datetime
+    
+    game_data = GameDataManager()
+    settings = await game_data.get_settings()
+    
+    bot_time = _get_bot_time(settings)
+    system_time = datetime.now()
+    time_offset = settings.get("time_offset_hours", 0)
+    
+    time_text = f"""
+🕐 <b>Текущее время</b>
+
+<b>Время бота:</b> {bot_time.strftime("%Y-%m-%d %H:%M:%S")}
+<b>Системное время:</b> {system_time.strftime("%Y-%m-%d %H:%M:%S")}
+
+{f'<b>Смещение:</b> {time_offset:+d} часов' if time_offset != 0 else ''}
+"""
+    
+    await message.answer(time_text, parse_mode="HTML")
 
 
 @router.message(Command("help"))

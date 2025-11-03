@@ -22,14 +22,25 @@ async def cmd_admin(message: Message):
         await message.answer("❌ У вас нет прав администратора.")
         return
     
-    admin_text = """
+    # Получаем текущее время бота
+    settings = await game_data.get_settings()
+    from services.reminders import _get_bot_time
+    from datetime import datetime
+    bot_time = _get_bot_time(settings)
+    current_time_str = bot_time.strftime("%H:%M:%S")
+    
+    admin_text = f"""
 🔧 <b>Панель администратора</b>
+
+🕐 <b>Текущее время бота:</b> {current_time_str}
 
 <b>Доступные команды:</b>
 /admin_stats - Статистика по игре
 /admin_users - Список участников
 /admin_day - Текущий день игры
 /admin_remind - Отправить напоминание всем
+/set_group - Установить чат и тред
+/time - Показать текущее время бота
 """
     
     await message.answer(admin_text, parse_mode="HTML")
@@ -97,6 +108,144 @@ async def cmd_admin_remind(message: Message, bot: Bot):
     
     await check_and_remind_users(bot, chat_id, thread_id)
     await message.answer("✅ Напоминания отправлены всем участникам.")
+
+
+@router.message(Command("time"))
+async def cmd_time(message: Message):
+    """Показывает текущее время бота"""
+    settings = await game_data.get_settings()
+    from services.reminders import _get_bot_time
+    from datetime import datetime
+    
+    bot_time = _get_bot_time(settings)
+    system_time = datetime.now()
+    time_offset = settings.get("time_offset_hours", 0)
+    
+    time_text = f"""
+🕐 <b>Время бота</b>
+
+<b>Системное время:</b> {system_time.strftime("%Y-%m-%d %H:%M:%S")}
+<b>Время бота:</b> {bot_time.strftime("%Y-%m-%d %H:%M:%S")}
+<b>Смещение:</b> {time_offset:+d} часов
+
+<b>Настройки:</b>
+• Время напоминаний: {settings.get('reminder_time', '18:00')}
+• Время исключения: {settings.get('removal_time', '23:30')}
+"""
+    
+    await message.answer(time_text, parse_mode="HTML")
+
+
+@router.message(Command("set_group"))
+async def cmd_set_group(message: Message, bot: Bot, command: CommandObject = None):
+    """Устанавливает чат и тред для бота"""
+    if not is_admin(message.from_user.id):
+        await message.answer("❌ У вас нет прав администратора.")
+        return
+    
+    from handlers.group import set_game_chat_id, get_or_create_bot_thread
+    from services.reminders import set_bot_thread_id, reminder_loop
+    import asyncio
+    
+    # Проверяем, есть ли аргументы команды
+    if command and command.args:
+        # Попытка использовать переданные ID
+        try:
+            args = command.args.strip().split()
+            if len(args) >= 1:
+                chat_id = int(args[0])
+                thread_id = int(args[1]) if len(args) >= 2 else None
+                
+                await set_game_chat_id(chat_id)
+                if thread_id:
+                    await set_bot_thread_id(thread_id)
+                    await message.answer(
+                        f"✅ Чат и тред установлены:\n"
+                        f"• Chat ID: {chat_id}\n"
+                        f"• Thread ID: {thread_id}"
+                    )
+                else:
+                    # Создаем тред автоматически
+                    thread_id = await get_or_create_bot_thread(bot, chat_id)
+                    if thread_id:
+                        await message.answer(
+                            f"✅ Чат и тред установлены:\n"
+                            f"• Chat ID: {chat_id}\n"
+                            f"• Thread ID: {thread_id}"
+                        )
+                    else:
+                        await message.answer(
+                            f"⚠️ Чат установлен, но не удалось создать тред.\n"
+                            f"• Chat ID: {chat_id}"
+                        )
+                return
+        except ValueError:
+            await message.answer(
+                "❌ Неверный формат. Используйте:\n"
+                "/set_group <chat_id> [thread_id]"
+            )
+            return
+    
+    # Если команда вызвана в группе
+    if message.chat.type in ["group", "supergroup"]:
+        chat_id = message.chat.id
+        
+        # Проверяем, является ли чат форумом
+        try:
+            chat = await bot.get_chat(chat_id)
+            if not chat.is_forum:
+                await message.answer(
+                    "⚠️ Этот чат не является форумом.\n"
+                    "Для работы бота необходимо включить темы (форумы) в настройках группы."
+                )
+                return
+            
+            # Создаем или получаем тред
+            thread_id = await get_or_create_bot_thread(bot, chat_id)
+            
+            if thread_id:
+                await set_game_chat_id(chat_id)
+                await set_bot_thread_id(thread_id)
+                
+                # Перезапускаем цикл напоминаний
+                # Старый цикл продолжит работать, но новый будет использовать новые настройки
+                asyncio.create_task(reminder_loop(bot, chat_id, thread_id))
+                
+                await message.answer(
+                    f"✅ <b>Чат и тред установлены!</b>\n\n"
+                    f"• <b>Chat ID:</b> {chat_id}\n"
+                    f"• <b>Thread ID:</b> {thread_id}\n\n"
+                    f"Бот теперь будет отправлять напоминания в этот чат.\n"
+                    f"Цикл напоминаний перезапущен с новыми настройками.",
+                    parse_mode="HTML"
+                )
+            else:
+                await message.answer(
+                    "❌ Не удалось создать тред бота. Убедитесь, что бот имеет права администратора."
+                )
+        except Exception as e:
+            logging.error(f"Ошибка при установке группы: {e}")
+            await message.answer(f"❌ Ошибка: {str(e)}")
+    else:
+        # Команда вызвана в личке
+        current_chat_id = await get_game_chat_id()
+        from services.reminders import get_bot_thread_id
+        current_thread_id = await get_bot_thread_id()
+        
+        info_text = f"""
+<b>Текущие настройки чата:</b>
+
+• <b>Chat ID:</b> {current_chat_id or 'Не установлен'}
+• <b>Thread ID:</b> {current_thread_id or 'Не установлен'}
+
+<b>Как установить:</b>
+1. Добавьте бота в группу с включенными форумами
+2. Вызовите команду /set_group в этой группе
+
+<b>Или вручную:</b>
+/set_group <chat_id> [thread_id]
+"""
+        await message.answer(info_text, parse_mode="HTML")
 
 
 @router.message(Command("startup_test"))

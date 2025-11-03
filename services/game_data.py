@@ -405,6 +405,9 @@ class GameDataManager:
         data = await self.get_all_data()
         data["settings"] = settings
         await self.save_data(data, sync_to_main=True)
+        # Инвалидируем кеш, чтобы изменения применились сразу
+        self._cache = None
+        self._cache_time = None
     
     async def get_chat_config(self) -> Dict[str, Optional[int]]:
         """Получает конфигурацию чата (chat_id и thread_id)"""
@@ -422,6 +425,9 @@ class GameDataManager:
         if thread_id:
             settings["thread_id"] = str(thread_id)
         await self.save_settings(settings)
+        # Инвалидируем кеш (уже делается в save_settings, но для ясности)
+        self._cache = None
+        self._cache_time = None
     
     def is_user_registered(self, user_id: int, data: Dict) -> bool:
         """Проверяет, зарегистрирован ли пользователь"""
@@ -501,6 +507,16 @@ class GameDataManager:
             if report["user_id"] == user_id:
                 count += 1
         return count
+    
+    async def get_current_day_async(self) -> int:
+        """Получает текущий день из настроек или вычисляет"""
+        try:
+            settings = await self.get_settings()
+            if settings.get("current_day"):
+                return int(settings.get("current_day"))
+        except:
+            pass
+        return self.get_current_day()
     
     def get_current_day(self, start_date: Optional[str] = None) -> int:
         """Вычисляет текущий день игры"""

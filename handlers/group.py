@@ -108,7 +108,7 @@ async def get_or_create_bot_thread(bot: Bot, chat_id: int) -> int | None:
         
         # Сохраняем ID треда
         from services.reminders import set_bot_thread_id
-        set_bot_thread_id(bot_thread_id)
+        await set_bot_thread_id(bot_thread_id)
         
         # Отправляем приветственное сообщение в тред
         try:

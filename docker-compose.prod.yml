@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - YADISK_TOKEN=${YADISK_TOKEN}
+      - YADISK_FILE_PATH=${YADISK_FILE_PATH:-90days_10goals/track.xlsx}
+      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
+      - WEB_URL=${WEB_URL}
+      - API_URL=${API_URL}
+    ports:
+      - "8000:8000"
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - YADISK_TOKEN=${YADISK_TOKEN}
+      - YADISK_FILE_PATH=${YADISK_FILE_PATH:-90days_10goals/track.xlsx}
+      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
+      - API_URL=${API_URL}
+      - WEB_URL=${WEB_URL}
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=${API_URL}
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+
+

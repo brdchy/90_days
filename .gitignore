@@ -19,42 +19,39 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
-# Virtual Environment
+MANIFEST
 venv/
-env/
 ENV/
+env/
 .venv
 
-# IDE
+# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# Environment variables
-env
+# Environment
 .env
 .env.local
-# НЕ игнорируем .env.example - это шаблон для пользователей
+.env.*.local
 
 # Logs
 *.log
-logs/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Project specific
-*.xlsx
-*.xls
-THE_GAME.xlsx
-book_src/
-report_template.txt
-game_concept.txt
+# Web
+web/node_modules/
+web/dist/
+web/.vite/
+web/.env.local
+web/.env.production.local
 
-# Temporary files
-*.tmp
-.cache/
+# Game data (не коммитить реальные данные)
+*.xlsx
+!THE GAME.xlsx  # Пример файла можно оставить
+game_data/
