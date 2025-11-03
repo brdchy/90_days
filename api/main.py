@@ -676,9 +676,10 @@ async def delete_participant(user_id: int, admin: str = Depends(verify_admin)):
     try:
         data = await game_data.get_all_data()
         
-        participant_found = False
+        # Считаем, был ли участник в исходном списке до фильтрации
+        original_count = len(data.get("participants", []))
         data["participants"] = [p for p in data.get("participants", []) if p["user_id"] != user_id]
-        participant_found = len(data["participants"]) < len(data.get("participants", []))
+        participant_found = len(data["participants"]) < original_count
         
         # Удаляем также все отчеты участника
         data["reports"] = [r for r in data.get("reports", []) if r["user_id"] != user_id]
