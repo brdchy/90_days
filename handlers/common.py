@@ -19,7 +19,7 @@ async def cmd_start(message: Message, state: FSMContext):
     try:
         data = await game_data.refresh_local_cache_from_remote()
     except Exception:
-    data = await game_data.get_all_data()
+        data = await game_data.get_all_data()
     user_id = message.from_user.id
     
     # Создаем кнопку для входа на сайт, если пользователь зарегистрирован
@@ -102,13 +102,17 @@ async def cmd_start(message: Message, state: FSMContext):
 async def cmd_time_user(message: Message):
     """Показывает текущее время бота для обычных пользователей"""
     from services.game_data import GameDataManager
-    from services.reminders import _get_bot_time
-    from datetime import datetime
+    from datetime import datetime, timedelta
     
     game_data = GameDataManager()
     settings = await game_data.get_settings()
     
-    bot_time = _get_bot_time(settings)
+    # Вычисляем время бота с учетом смещения
+    try:
+        offset = int(settings.get("time_offset_hours", 0) or 0)
+    except Exception:
+        offset = 0
+    bot_time = datetime.now() + timedelta(hours=offset)
     system_time = datetime.now()
     time_offset = settings.get("time_offset_hours", 0)
     
