@@ -57,7 +57,7 @@ auth_tokens: Dict[str, Dict[str, Any]] = {}
 
 # Валидация админских данных
 ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD = "admin"  # В продакшене использовать переменную окружения
+ADMIN_PASSWORD = "nopasswordnotroubles"  # В продакшене использовать переменную окружения
 
 def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
     """Проверяет админские учетные данные"""
