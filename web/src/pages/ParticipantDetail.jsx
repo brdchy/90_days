@@ -1,12 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
 import { api } from '../api/client'
-import { ArrowLeft, Calendar, Target, BarChart as BarChartIcon } from 'lucide-react'
+import { ArrowLeft, Calendar, Target, BarChart as BarChartIcon, Edit, FileText, Plus } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 
 export default function ParticipantDetail() {
   const { userId } = useParams()
   const userIdInt = parseInt(userId)
+  
+  // Проверяем, авторизован ли пользователь и это его страница
+  const userAuth = JSON.parse(localStorage.getItem('user_auth') || '{}')
+  const isOwnPage = userAuth.user_id === userIdInt && userAuth.authenticated
 
   const { data: participant } = useQuery({
     queryKey: ['participant', userIdInt],
@@ -92,8 +96,35 @@ export default function ParticipantDetail() {
         )}
       </div>
 
-      {/* Ссылка на статистику */}
-      {stats && (
+      {/* Действия для владельца страницы */}
+      {isOwnPage && (
+        <div className="mb-6 flex flex-wrap gap-3">
+          <Link
+            to={`/participants/${participant.user_id}/stats`}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+          >
+            <BarChartIcon size={18} />
+            <span>Посмотреть полную статистику</span>
+          </Link>
+          <Link
+            to={`/participants/${participant.user_id}/edit-goals`}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+          >
+            <Edit size={18} />
+            <span>Редактировать цели</span>
+          </Link>
+          <Link
+            to="/reports/create"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+          >
+            <Plus size={18} />
+            <span>Создать отчет</span>
+          </Link>
+        </div>
+      )}
+      
+      {/* Ссылка на статистику для других пользователей */}
+      {!isOwnPage && stats && (
         <div className="mb-6">
           <Link
             to={`/participants/${participant.user_id}/stats`}

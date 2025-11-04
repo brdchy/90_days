@@ -7,7 +7,7 @@ import os
 # Добавляем корневую директорию в путь для импортов
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import JSONResponse, FileResponse
@@ -71,6 +71,35 @@ def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
             headers={"WWW-Authenticate": "Basic"},
         )
     return credentials.username
+
+
+async def verify_user_token(
+    token: Optional[str] = Query(None, alias="token"),
+    authorization: Optional[str] = Header(None)
+):
+    """Проверяет токен пользователя и возвращает user_id"""
+    # Получаем токен из query параметра или заголовка Authorization
+    if not token and authorization:
+        # Формат: Bearer <token> или просто <token>
+        if authorization.startswith("Bearer "):
+            token = authorization.replace("Bearer ", "")
+        else:
+            token = authorization
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Токен не предоставлен")
+    
+    if token not in auth_tokens:
+        raise HTTPException(status_code=401, detail="Токен не найден или истек")
+    
+    token_data = auth_tokens[token]
+    
+    # Проверяем срок действия
+    if token_data["expires_at"] < datetime.now():
+        del auth_tokens[token]
+        raise HTTPException(status_code=401, detail="Токен истек")
+    
+    return token_data["user_id"]
 
 
 # Pydantic модели
@@ -150,6 +179,16 @@ class CommunityStatsResponse(BaseModel):
     active_participants: int
     total_participants: int
     participants_ranking: List[Dict[str, Any]]
+
+class GameStartRequest(BaseModel):
+    user_id: int
+    token: str
+
+class GameStartResponse(BaseModel):
+    game_started: bool
+    total_participants: int
+    agreed_participants: int
+    all_agreed: bool
 
 
 # API Endpoints
@@ -838,6 +877,232 @@ async def set_game_day(day_update: GameDayUpdate, admin: str = Depends(verify_ad
         raise
     except Exception as e:
         logger.error(f"Ошибка при установке дня: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Endpoints для участников (с токеном)
+@app.post("/api/user/reports", response_model=ReportResponse)
+async def create_user_report(
+    report: ReportCreate,
+    user_id: int = Depends(verify_user_token)
+):
+    """Создать отчет от имени участника"""
+    try:
+        # Проверяем, что user_id в запросе совпадает с токеном
+        if report.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Нельзя создавать отчеты за другого пользователя")
+        
+        data = await game_data.get_all_data()
+        current_day = await game_data.get_current_day_async()
+        
+        # Проверяем, существует ли участник
+        participant_exists = any(p["user_id"] == report.user_id for p in data.get("participants", []))
+        if not participant_exists:
+            raise HTTPException(status_code=404, detail="Участник не найден")
+        
+        # Проверяем, что участник активен
+        participant = next(p for p in data.get("participants", []) if p["user_id"] == report.user_id)
+        if participant.get("status") != "active":
+            raise HTTPException(status_code=400, detail="Участник не активен")
+        
+        # Проверяем, нет ли уже отчета за этот день
+        for r in data.get("reports", []):
+            if r["user_id"] == report.user_id and r["day"] == report.day:
+                raise HTTPException(status_code=400, detail="Отчет за этот день уже существует")
+        
+        # Проверяем, что день не превышает текущий день игры
+        if report.day > current_day:
+            raise HTTPException(status_code=400, detail=f"Нельзя создать отчет за день больше текущего ({current_day})")
+        
+        new_report = {
+            "user_id": report.user_id,
+            "day": report.day,
+            "date": report.date,
+            "progress": report.progress if len(report.progress) == 10 else report.progress + [""] * (10 - len(report.progress)),
+            "rest_day": report.rest_day
+        }
+        
+        data["reports"].append(new_report)
+        await game_data.save_data(data, sync_to_main=True)
+        
+        return ReportResponse(**new_report)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Ошибка при создании отчета: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/user/reports/{day}", response_model=ReportResponse)
+async def update_user_report(
+    day: int,
+    report_update: ReportUpdate,
+    user_id: int = Depends(verify_user_token)
+):
+    """Обновить отчет участника"""
+    try:
+        data = await game_data.get_all_data()
+        current_day = await game_data.get_current_day_async()
+        
+        # Проверяем, что день не превышает текущий день игры
+        if day > current_day:
+            raise HTTPException(status_code=400, detail=f"Нельзя обновить отчет за день больше текущего ({current_day})")
+        
+        report = None
+        for r in data.get("reports", []):
+            if r["user_id"] == user_id and r["day"] == day:
+                report = r
+                if report_update.progress is not None:
+                    r["progress"] = report_update.progress if len(report_update.progress) == 10 else report_update.progress + [""] * (10 - len(report_update.progress))
+                if report_update.rest_day is not None:
+                    r["rest_day"] = report_update.rest_day
+                break
+        
+        if not report:
+            raise HTTPException(status_code=404, detail="Отчет не найден")
+        
+        await game_data.save_data(data, sync_to_main=True)
+        return ReportResponse(**report)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Ошибка при обновлении отчета: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/user/goals", response_model=ParticipantResponse)
+async def update_user_goals(
+    goals_update: ParticipantUpdate,
+    user_id: int = Depends(verify_user_token)
+):
+    """Обновить цели участника"""
+    try:
+        data = await game_data.get_all_data()
+        
+        participant = None
+        for i, p in enumerate(data.get("participants", [])):
+            if p["user_id"] == user_id:
+                participant = p
+                # Разрешаем обновлять только цели
+                if goals_update.goals is not None:
+                    p["goals"] = goals_update.goals if len(goals_update.goals) == 10 else goals_update.goals + [""] * (10 - len(goals_update.goals))
+                break
+        
+        if not participant:
+            raise HTTPException(status_code=404, detail="Участник не найден")
+        
+        await game_data.save_data(data, sync_to_main=True)
+        return ParticipantResponse(**participant)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Ошибка при обновлении целей: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Механизм начала игры
+@app.get("/api/game/start-status")
+async def get_game_start_status():
+    """Получить статус начала игры"""
+    try:
+        data = await game_data.get_all_data()
+        settings = await game_data.get_settings()
+        
+        # Получаем список всех участников
+        all_participants = data.get("participants", [])
+        total_participants = len(all_participants)
+        
+        # Получаем список согласных участников
+        game_start_agreed = settings.get("game_start_agreed", [])
+        agreed_count = len(game_start_agreed)
+        
+        # Проверяем, началась ли игра
+        current_day = await game_data.get_current_day_async()
+        game_started = current_day > 0
+        
+        return {
+            "game_started": game_started,
+            "total_participants": total_participants,
+            "agreed_participants": agreed_count,
+            "all_agreed": agreed_count == total_participants and total_participants > 0,
+            "agreed_user_ids": game_start_agreed
+        }
+    except Exception as e:
+        logger.error(f"Ошибка при получении статуса начала игры: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/game/agree-start")
+async def agree_to_start_game(
+    request: GameStartRequest
+):
+    """Согласиться на начало игры"""
+    try:
+        # Проверяем токен
+        if request.token not in auth_tokens:
+            raise HTTPException(status_code=401, detail="Токен не найден или истек")
+        
+        token_data = auth_tokens[request.token]
+        if token_data["expires_at"] < datetime.now():
+            del auth_tokens[request.token]
+            raise HTTPException(status_code=401, detail="Токен истек")
+        
+        if token_data["user_id"] != request.user_id:
+            raise HTTPException(status_code=403, detail="Неверный user_id для токена")
+        
+        data = await game_data.get_all_data()
+        settings = await game_data.get_settings()
+        
+        # Проверяем, что пользователь существует
+        participant_exists = any(p["user_id"] == request.user_id for p in data.get("participants", []))
+        if not participant_exists:
+            raise HTTPException(status_code=404, detail="Участник не найден")
+        
+        # Проверяем, не началась ли уже игра
+        current_day = await game_data.get_current_day_async()
+        if current_day > 0:
+            return {
+                "game_started": True,
+                "message": "Игра уже началась",
+                "current_day": current_day
+            }
+        
+        # Добавляем пользователя в список согласных
+        game_start_agreed = settings.get("game_start_agreed", [])
+        if request.user_id not in game_start_agreed:
+            game_start_agreed.append(request.user_id)
+            settings["game_start_agreed"] = game_start_agreed
+            await game_data.save_settings(settings)
+        
+        # Проверяем, все ли согласны
+        all_participants = data.get("participants", [])
+        total_participants = len(all_participants)
+        agreed_count = len(game_start_agreed)
+        all_agreed = agreed_count == total_participants and total_participants > 0
+        
+        # Если все согласны, начинаем игру (устанавливаем день 1)
+        if all_agreed and not game_started:
+            settings["current_day"] = 1
+            await game_data.save_settings(settings)
+            return {
+                "game_started": True,
+                "message": "Игра началась! Все участники согласны.",
+                "current_day": 1,
+                "total_participants": total_participants,
+                "agreed_participants": agreed_count
+            }
+        
+        return {
+            "game_started": False,
+            "message": "Согласие зарегистрировано",
+            "total_participants": total_participants,
+            "agreed_participants": agreed_count,
+            "all_agreed": all_agreed
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Ошибка при согласии на начало игры: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

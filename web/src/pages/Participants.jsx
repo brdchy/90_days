@@ -19,7 +19,8 @@ export default function Participants() {
   }
 
   const activeParticipants = participants?.filter((p) => p.status === 'active') || []
-  const inactiveParticipants = participants?.filter((p) => p.status !== 'active') || []
+  const inactiveParticipants = participants?.filter((p) => p.status !== 'active' && p.status !== 'removed') || []
+  const removedParticipants = participants?.filter((p) => p.status === 'removed') || []
   
   // Создаем маппинг статистики для быстрого доступа
   const statsMap = {}
@@ -175,13 +176,31 @@ export default function Participants() {
 
       {/* Неактивные участники */}
       {inactiveParticipants.length > 0 && (
-        <div>
+        <div className="mb-8">
           <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <XCircle className="text-red-600" size={20} />
+            <XCircle className="text-orange-600" size={20} />
             Неактивные участники
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {inactiveParticipants.map((participant) => (
+              <ParticipantCard key={participant.user_id} participant={participant} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Исключенные участники */}
+      {removedParticipants.length > 0 && (
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <XCircle className="text-red-600" size={20} />
+            Исключенные участники
+          </h2>
+          <p className="text-gray-600 mb-4 text-sm">
+            Эти участники были исключены из игры за нарушение правил (отсутствие отчетов или недостаточный прогресс).
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {removedParticipants.map((participant) => (
               <ParticipantCard key={participant.user_id} participant={participant} />
             ))}
           </div>
@@ -223,10 +242,16 @@ function ParticipantCard({ participant, stats }) {
             className={`px-2 py-1 rounded-full text-xs font-medium ${
               participant.status === 'active'
                 ? 'bg-green-100 text-green-800'
-                : 'bg-red-100 text-red-800'
+                : participant.status === 'removed'
+                ? 'bg-red-100 text-red-800'
+                : 'bg-orange-100 text-orange-800'
             }`}
           >
-            {participant.status === 'active' ? 'Активен' : 'Неактивен'}
+            {participant.status === 'active' 
+              ? 'Активен' 
+              : participant.status === 'removed'
+              ? 'Исключен'
+              : 'Неактивен'}
           </span>
           {stats && !stats.has_today_report && (
             <span className="text-xs text-red-600 flex items-center gap-1">

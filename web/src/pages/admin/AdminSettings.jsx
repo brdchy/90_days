@@ -37,8 +37,16 @@ export default function AdminSettings() {
   const [botStatusError, setBotStatusError] = useState('')
   const { refetch: refetchBotStatus, isFetching: isBotStatusLoading } = useQuery({
     queryKey: ['admin-bot-status'],
-    queryFn: () => api.getBotStatus().then((res) => res.data),
+    queryFn: async () => {
+      try {
+        const response = await api.getBotStatus()
+        return response.data
+      } catch (error) {
+        throw error
+      }
+    },
     enabled: false,
+    retry: false,
     onSuccess: (data) => {
       setBotStatusError('')
       setBotStatus(data)

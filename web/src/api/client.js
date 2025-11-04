@@ -67,5 +67,26 @@ export const api = {
   
   // Управление днем игры
   setGameDay: (day) => apiClient.post('/api/admin/game-day', { day }, { requiresAuth: true }),
+  
+  // Методы для участников (с токеном)
+  createUserReport: (report, token) => apiClient.post('/api/user/reports', report, {
+    params: { token },
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  }),
+  updateUserReport: (day, report, token) => apiClient.put(`/api/user/reports/${day}`, report, {
+    params: { token },
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  }),
+  updateUserGoals: (goals, token) => apiClient.put('/api/user/goals', { goals }, {
+    params: { token },
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  }),
+  
+  // Механизм начала игры
+  getGameStartStatus: () => apiClient.get('/api/game/start-status'),
+  agreeToStartGame: (userId, token) => apiClient.post('/api/game/agree-start', {
+    user_id: userId,
+    token: token
+  }),
 }
 

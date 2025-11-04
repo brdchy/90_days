@@ -6,6 +6,8 @@ import ParticipantDetail from './pages/ParticipantDetail'
 import Reports from './pages/Reports'
 import ReportDetail from './pages/ReportDetail'
 import ParticipantStats from './pages/ParticipantStats'
+import CreateReport from './pages/CreateReport'
+import EditGoals from './pages/EditGoals'
 import AdminLogin from './pages/admin/AdminLogin'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminParticipants from './pages/admin/AdminParticipants'
@@ -32,8 +34,11 @@ function App() {
           <Route path="participants" element={<Participants />} />
           <Route path="participants/:userId" element={<ParticipantDetail />} />
           <Route path="participants/:userId/stats" element={<ParticipantStats />} />
+          <Route path="participants/:userId/edit-goals" element={<EditGoals />} />
           <Route path="reports" element={<Reports />} />
           <Route path="reports/:userId/:day" element={<ReportDetail />} />
+          <Route path="reports/create" element={<CreateReport />} />
+          <Route path="reports/create/:day" element={<CreateReport />} />
         </Route>
 
         {/* Админские маршруты */}
