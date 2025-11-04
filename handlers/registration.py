@@ -51,8 +51,8 @@ async def process_name(message: Message, state: FSMContext):
     # Регистрируем пользователя
     data = await game_data.get_all_data()
     game_data.register_user(user_id, username, full_name, name, data)
-    # Сохраняем без синхронизации с основным файлом (регистрация не критична)
-    await game_data.save_data(data, sync_to_main=False)
+    # Сохраняем с немедленной синхронизацией в основной файл, чтобы API сразу увидел участника
+    await game_data.save_data(data, sync_to_main=True)
     
     # Отправляем обновление в тред, если он настроен
     from services.reminders import send_update_to_thread, get_bot_thread_id
