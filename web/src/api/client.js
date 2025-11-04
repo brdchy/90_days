@@ -50,6 +50,7 @@ export const api = {
   updateSettings: (settings) => apiClient.put('/api/admin/settings', settings, { requiresAuth: true }),
   triggerRemind: () => apiClient.post('/api/admin/remind', {}, { requiresAuth: true }),
   testChat: () => apiClient.post('/api/admin/test-chat', {}, { requiresAuth: true }),
+  triggerRemoveInactive: () => apiClient.post('/api/admin/remove-inactive', {}, { requiresAuth: true }),
   
   // Управление участниками
   createParticipant: (participant) => apiClient.post('/api/admin/participants', participant, { requiresAuth: true }),

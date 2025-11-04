@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
-import { Settings, Clock, Save, CheckCircle, Calendar, Globe, AlertCircle, ListChecks } from 'lucide-react'
+import { Settings, Clock, Save, CheckCircle, Calendar, Globe, AlertCircle, ListChecks, ShieldAlert } from 'lucide-react'
 
 export default function AdminSettings() {
   const [reminderTime, setReminderTime] = useState('18:00')
@@ -293,34 +293,60 @@ export default function AdminSettings() {
             <p className="text-gray-500">Нажмите «Обновить статус», чтобы получить информацию.</p>
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div>
-                  <p className="text-sm text-gray-600 mb-1">Текущее время бота</p>
-                  <p className="font-medium text-gray-900 font-mono">{botStatus.bot_time}</p>
-                  <p className="text-xs text-gray-500">Смещение: {botStatus.time_offset_hours || 0} ч</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600 mb-1">Системное время</p>
-                  <p className="font-medium text-gray-900 font-mono">{botStatus.system_time}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600 mb-1">Время напоминаний</p>
-                  <p className="font-medium text-gray-900">{botStatus.reminder_time}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600 mb-1">Время исключения</p>
-                  <p className="font-medium text-gray-900">{botStatus.removal_time}</p>
-                </div>
+              {/* Таблица со статусом */}
+              <div className="overflow-x-auto">
+                <table className="min-w-full table-auto border border-gray-200 rounded-lg overflow-hidden">
+                  <tbody className="divide-y divide-gray-200">
+                    <tr>
+                      <td className="px-4 py-2 text-sm text-gray-600">Текущее время бота</td>
+                      <td className="px-4 py-2 font-mono">{botStatus.bot_time}</td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-2 text-sm text-gray-600">Системное время</td>
+                      <td className="px-4 py-2 font-mono">{botStatus.system_time}</td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-2 text-sm text-gray-600">Смещение времени (часы)</td>
+                      <td className="px-4 py-2">{botStatus.time_offset_hours || 0}</td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-2 text-sm text-gray-600">Текущий день</td>
+                      <td className="px-4 py-2">#{botStatus.current_day}</td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-2 text-sm text-gray-600">Время напоминаний</td>
+                      <td className="px-4 py-2">{botStatus.reminder_time}</td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-2 text-sm text-gray-600">Время исключения</td>
+                      <td className="px-4 py-2">{botStatus.removal_time}</td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-2 text-sm text-gray-600">ID чата</td>
+                      <td className="px-4 py-2 font-mono">{botStatus.chat_id || '—'}</td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-2 text-sm text-gray-600">ID треда</td>
+                      <td className="px-4 py-2 font-mono">{botStatus.thread_id || '—'}</td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-2 text-sm text-gray-600">Без отчета сегодня</td>
+                      <td className="px-4 py-2">{botStatus.users_without_report_count}</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
+
+              {/* Список пользователей без отчета */}
               <div>
                 <p className="text-sm text-gray-600 mb-2">Участники без отчета за день #{botStatus.current_day}</p>
                 <p className="font-medium text-gray-900">{botStatus.users_without_report_count}</p>
                 {botStatus.users_without_report?.length > 0 && (
                   <ul className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-700">
-                    {botStatus.users_without_report.slice(0, 10).map((u) => (
+                    {botStatus.users_without_report.slice(0, 20).map((u) => (
                       <li key={u.user_id} className="flex items-center gap-2 overflow-hidden">
                         <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                        <span className="font-medium truncate max-w-[10rem]">{u.game_name}</span>
+                        <span className="font-medium truncate max-w-[12rem]">{u.game_name}</span>
                         {u.username && (
                           <span className="text-gray-500 truncate">@{u.username}</span>
                         )}
@@ -328,6 +354,18 @@ export default function AdminSettings() {
                     ))}
                   </ul>
                 )}
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      api.triggerRemoveInactive().then(() => refetchBotStatus())
+                    }}
+                    className="btn btn-danger flex items-center gap-2"
+                  >
+                    <ShieldAlert size={18} />
+                    Исключить неактивных сейчас
+                  </button>
+                </div>
               </div>
             </div>
           )}

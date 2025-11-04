@@ -533,6 +533,26 @@ async def trigger_remind(admin: str = Depends(verify_admin)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/admin/remove-inactive")
+async def trigger_remove_inactive(admin: str = Depends(verify_admin)):
+    """Исключить неактивных участников прямо сейчас (только для админа)"""
+    try:
+        from aiogram import Bot
+        from services.reminders import check_and_remove_inactive_users, get_bot_thread_id
+        from handlers.group import get_game_chat_id
+        
+        bot = Bot(token=config.bot_token.get_secret_value())
+        try:
+            chat_id = await get_game_chat_id()
+            thread_id = await get_bot_thread_id()
+            await check_and_remove_inactive_users(bot, chat_id, thread_id)
+            return {"message": "Проверка выполнена. Неактивные участники исключены (если были)."}
+        finally:
+            await bot.session.close()
+    except Exception as e:
+        logger.error(f"Ошибка при исключении неактивных: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/admin/test-chat")
 async def test_chat(admin: str = Depends(verify_admin)):
     """Проверить работу чата (только для админа)"""

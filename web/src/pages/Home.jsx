@@ -196,7 +196,48 @@ export default function Home() {
             />
           </div>
         </Link>
-
+        {isAuthenticated && (
+          <Link
+            to="/reports/create"
+            className="card hover:shadow-md transition-shadow group"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                  Создать отчет
+                </h3>
+                <p className="text-gray-600">
+                  Заполните отчет за текущий день по своим целям
+                </p>
+              </div>
+              <ArrowRight
+                className="text-primary-600 group-hover:translate-x-1 transition-transform"
+                size={24}
+              />
+            </div>
+          </Link>
+        )}
+        {isAuthenticated && (
+          <Link
+            to={`/participants/${userAuth.user_id}/edit-goals`}
+            className="card hover:shadow-md transition-shadow group"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                  Мои цели
+                </h3>
+                <p className="text-gray-600">
+                  Просмотр и редактирование ваших 10 целей
+                </p>
+              </div>
+              <ArrowRight
+                className="text-primary-600 group-hover:translate-x-1 transition-transform"
+                size={24}
+              />
+            </div>
+          </Link>
+        )}
       </div>
     </div>
   )
